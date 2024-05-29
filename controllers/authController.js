@@ -24,10 +24,14 @@ export const login = async (req, res) => {
       throw new Error("User does not exists");
     }
     if (user && bcrypt.compareSync(password, user.password)) {
+      const { token, token_expiration } = generateToken(user._id);
       res.status(200).json({
         message: "User logged in",
         status: "success",
-        token: generateToken(user._id),
+        name: user.fullName,
+        email: user.email,
+        token: token,
+        token_expiration: token_expiration,
       });
     } else {
       res.status(400);
@@ -49,7 +53,7 @@ export const register = async (req, res) => {
     //if any of the fields are empty
     if (!fullName || !email || !password) {
       res.status(400);
-      throw new Error("Please add all fields");
+      return res.status(400).json({ message: "Please add all fields" });
     }
 
     const db = dbConnect.db("music_streaming");
@@ -58,8 +62,7 @@ export const register = async (req, res) => {
     // Check if user exists
     const userExists = await collection.findOne({ email });
     if (userExists) {
-      res.status(400);
-      throw new Error("User already exists");
+      return res.status(400).json({ message: "User already exists" });
     }
 
     // Hash password
@@ -67,16 +70,24 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // Create user
+    const currentDate = new Date();
     const user = await collection.insertOne({
       fullName,
       email,
       password: hashedPassword,
       playllists: [],
+      registrationDate: currentDate,
     });
-    if (user) {
-      res.status(201).json({
+
+    if (user.insertedId) {
+      const userId = user.insertedId.toHexString();
+      const { token, token_expiration } = generateToken(userId);
+      console.log(user._id);
+      res.status(200).json({
         message: "user registered",
         status: "success",
+        token: token,
+        token_expiration: token_expiration,
       });
     } else {
       res.status(400);
@@ -90,7 +101,9 @@ export const register = async (req, res) => {
 
 //Generate JWT for the user
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
+  const tokenExpiration = new Date().getTime() + 7 * 24 * 60 * 60 * 1000; // Текущее время + 7 дней (в миллисекундах)
+  const token = jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: "7d",
   });
+  return { token, token_expiration: tokenExpiration };
 };
